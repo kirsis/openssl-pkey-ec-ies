@@ -19,7 +19,8 @@
 
 typedef struct {
     const EVP_CIPHER *cipher;
-    const EVP_MD *md;
+    const EVP_MD *md; 		/* for mac tag */
+    const EVP_MD *kdf_md; 	/* for KDF */
     size_t KDF_digest_length;
     size_t envelope_key_length;
     const EC_KEY *user_key;
