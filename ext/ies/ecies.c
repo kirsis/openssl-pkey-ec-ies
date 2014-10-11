@@ -141,45 +141,11 @@ cryptogram_t * ecies_encrypt(const EC_KEY *user, const unsigned char *data, size
 
     // Initialize the cipher with the envelope key.
     if (EVP_EncryptInit_ex(&cipher, ECIES_CIPHER, NULL, envelope_key, iv) != 1
-	|| EVP_CIPHER_CTX_set_padding(&cipher, 0) != 1
-	|| EVP_EncryptUpdate(&cipher, body, &body_length, data, length - (length % block_length)) != 1) {
+	|| EVP_EncryptUpdate(&cipher, body, &body_length, data, length) != 1) {
 	printf("An error occurred while trying to secure the data using the chosen symmetric cipher. {error = %s}\n", ERR_error_string(ERR_get_error(), NULL));
 	EVP_CIPHER_CTX_cleanup(&cipher);
 	cryptogram_free(cryptogram);
 	return NULL;
-    }
-
-    // Check whether all of the data was encrypted. If they don't match up, we either have a partial block remaining, or an error occurred.
-    if (body_length != (int)length) {
-
-	// Make sure all that remains is a partial block, and their wasn't an error.
-	if (length - body_length >= block_length) {
-	   printf("Unable to secure the data using the chosen symmetric cipher. {error = %s}\n", ERR_error_string(ERR_get_error(), NULL));
-	    EVP_CIPHER_CTX_cleanup(&cipher);
-	    cryptogram_free(cryptogram);
-	    return NULL;
-	}
-
-	// Copy the remaining data into our partial block buffer. The memset() call ensures any extra bytes will be zero'ed out.
-	memset(block, 0, EVP_MAX_BLOCK_LENGTH);
-	memcpy(block, data + body_length, length - body_length);
-
-	// Advance the body pointer to the location of the remaining space, and calculate just how much room is still available.
-	body += body_length;
-	if ((body_length = cryptogram_body_length(cryptogram) - body_length) < 0) {
-	    printf("The symmetric cipher overflowed!\n");
-	    EVP_CIPHER_CTX_cleanup(&cipher);
-	    cryptogram_free(cryptogram);
-	    return NULL;
-	}
-
-	// Pass the final partially filled data block into the cipher as a complete block. The padding will be removed during the decryption process.
-	if (EVP_EncryptUpdate(&cipher, body, &body_length, block, block_length) != 1) {
-	    printf("Unable to secure the data using the chosen symmetric cipher. {error = %s}\n", ERR_error_string(ERR_get_error(), NULL));
-	    EVP_CIPHER_CTX_cleanup(&cipher);
-	    cryptogram_free(cryptogram);
-	    return NULL;
-	}
     }
 
     // Advance the pointer, then use pointer arithmetic to calculate how much of the body buffer has been used. The complex logic is needed so that we get
@@ -280,8 +246,8 @@ unsigned char * ecies_decrypt(const EC_KEY *user, cryptogram_t *cryptogram, size
 
     const EVP_CIPHER * ECIES_CIPHER = EVP_aes_128_cbc();
     const EVP_MD * ECIES_HASHER = EVP_sha1();
-    size_t key_length;
-    int output_length;
+    size_t key_length, output_sum, body_length;
+    int out_len;
     EVP_CIPHER_CTX cipher;
     EC_KEY *ephemeral, *user_copy;
     unsigned char envelope_key[SHA512_DIGEST_LENGTH], iv[EVP_MAX_IV_LENGTH], md[EVP_MAX_MD_SIZE], *block, *output;
@@ -353,45 +319,39 @@ unsigned char * ecies_decrypt(const EC_KEY *user, cryptogram_t *cryptogram, size
     }
 
     // Create a buffer to hold the result.
-    output_length = cryptogram_body_length(cryptogram);
-    if (!(block = output = malloc(output_length + 1))) {
+    body_length = cryptogram_body_length(cryptogram);
+    if (!(block = output = malloc(body_length + 1))) {
 	printf("An error occurred while trying to allocate memory for the decrypted data.\n");
 	return NULL;
     }
 
     // For now we use an empty initialization vector. We also clear out the result buffer just to be on the safe side.
     memset(iv, 0, EVP_MAX_IV_LENGTH);
-    memset(output, 0, output_length + 1);
+    memset(output, 0, body_length + 1);
 
     EVP_CIPHER_CTX_init(&cipher);
 
     // Decrypt the data using the chosen symmetric cipher.
     if (EVP_DecryptInit_ex(&cipher, ECIES_CIPHER, NULL, envelope_key, iv) != 1
-	|| EVP_CIPHER_CTX_set_padding(&cipher, 0) != 1
-	|| EVP_DecryptUpdate(&cipher, block, &output_length, cryptogram_body_data(cryptogram), cryptogram_body_length(cryptogram)) != 1) {
+	|| EVP_DecryptUpdate(&cipher, block, &out_len, cryptogram_body_data(cryptogram), cryptogram_body_length(cryptogram)) != 1) {
 	printf("Unable to decrypt the data using the chosen symmetric cipher. {error = %s}\n", ERR_error_string(ERR_get_error(), NULL));
 	EVP_CIPHER_CTX_cleanup(&cipher);
 	free(output);
 	return NULL;
     }
+    output_sum = out_len;
 
-    block += output_length;
-    if ((output_length = cryptogram_body_length(cryptogram) - output_length) != 0) {
-	printf("The symmetric cipher failed to properly decrypt the correct amount of data!\n");
-	EVP_CIPHER_CTX_cleanup(&cipher);
-	free(output);
-	return NULL;
-    }
-
-    if (EVP_DecryptFinal_ex(&cipher, block, &output_length) != 1) {
+    block += output_sum;
+    if (EVP_DecryptFinal_ex(&cipher, block, &out_len) != 1) {
 	printf("Unable to decrypt the data using the chosen symmetric cipher. {error = %s}\n", ERR_error_string(ERR_get_error(), NULL));
 	EVP_CIPHER_CTX_cleanup(&cipher);
 	free(output);
 	return NULL;
     }
+    output_sum += out_len;
 
     EVP_CIPHER_CTX_cleanup(&cipher);
 
-    *length = output_length;
+    *length = output_sum;
     return output;
 }

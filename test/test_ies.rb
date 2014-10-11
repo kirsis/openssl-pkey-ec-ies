@@ -10,10 +10,15 @@ class TestIES < Minitest::Unit::TestCase
     @ec = OpenSSL::PKey::EC::IES.new(test_key, "placeholder")
   end
 
+  def test_ec_has_private_and_public_keys
+    assert @ec.private_key?
+    assert @ec.public_key?
+  end
+
   def test_encrypt_then_decrypt_get_the_source_text
     source = 'いろはにほへと ちるぬるを わかよたれそ つねならむ うゐのおくやま けふこえて あさきゆめみし ゑひもせすん'
     cryptogram = @ec.public_encrypt(source)
     result = @ec.private_decrypt(cryptogram)
-    assert_equal source, result
+    assert_equal source, result.force_encoding('UTF-8')
   end
 end

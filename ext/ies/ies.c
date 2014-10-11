@@ -62,15 +62,14 @@ static cryptogram_t *ies_rb_string_to_cryptogram(VALUE self, const VALUE string)
  *
  *  Algorithm spec is currently ignored.
  */
-static VALUE ies_initialize(int argc, VALUE *argv, VALUE self)
+static VALUE ies_initialize(VALUE self, VALUE key, VALUE algo)
 {
-    VALUE key, algo;
-
-    rb_scan_args(argc, argv, "02", &key, &algo);
-    rb_call_super(1, &key);
+    VALUE args[1];
 
     rb_iv_set(self, "@algorithm", algo);
-    return self;
+
+    args[0] = key;
+    return rb_call_super(1, args);
 }
 
 /*
@@ -79,17 +78,16 @@ static VALUE ies_initialize(int argc, VALUE *argv, VALUE self)
  *
  *  The pem_string given in init must contain public key.
  */
-static VALUE ies_public_encrypt(int argc, VALUE *argv, VALUE self)
+static VALUE ies_public_encrypt(VALUE self, VALUE clear_text)
 {
     EC_KEY *ec;
-    VALUE clear_text, cipher_text;
+    VALUE cipher_text;
     cryptogram_t *cryptogram;
 
     ec = require_ec_key(self);
-    if (EC_KEY_get0_public_key(ec))
+    if (!EC_KEY_get0_public_key(ec))
 	rb_raise(eIESError, "Given EC key is not public key");
 
-    rb_scan_args(argc, argv, "01", &clear_text);
     StringValue(clear_text);
 
     cryptogram = ecies_encrypt(ec, (unsigned char*)RSTRING_PTR(clear_text), RSTRING_LEN(clear_text));
@@ -104,10 +102,10 @@ static VALUE ies_public_encrypt(int argc, VALUE *argv, VALUE self)
  *
  *  The pem_string given in init must contain private key.
  */
-static VALUE ies_private_decrypt(int argc, VALUE *argv, VALUE self)
+static VALUE ies_private_decrypt(VALUE self, VALUE cipher_text)
 {
     EC_KEY *ec;
-    VALUE cipher_text, clear_text;
+    VALUE clear_text;
     cryptogram_t *cryptogram;
     size_t length;
     unsigned char *data;
@@ -116,7 +114,6 @@ static VALUE ies_private_decrypt(int argc, VALUE *argv, VALUE self)
     if (!EC_KEY_get0_private_key(ec))
 	rb_raise(eIESError, "Given EC key is not private key");
 
-    rb_scan_args(argc, argv, "01", &cipher_text);
     StringValue(cipher_text);
 
     cryptogram = ies_rb_string_to_cryptogram(self, cipher_text);
@@ -148,4 +145,6 @@ Init_ies(void)
     rb_define_method(cIES, "initialize", ies_initialize, 2);
     rb_define_method(cIES, "public_encrypt", ies_public_encrypt, 1);
     rb_define_method(cIES, "private_decrypt", ies_private_decrypt, 1);
+
+    eIESError = rb_define_class_under(cIES, "IESError", rb_eRuntimeError);
 }
