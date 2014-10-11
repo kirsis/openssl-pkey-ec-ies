@@ -18,6 +18,14 @@
 #include <ruby.h>
 
 typedef struct {
+    const EVP_CIPHER *cipher;
+    const EVP_MD *md;
+    size_t KDF_digest_length;
+    size_t envelope_key_length;
+    const EC_KEY *user_key;
+} ies_ctx_t;
+
+typedef struct {
     struct {
 	size_t key;
 	size_t mac;
@@ -38,7 +46,7 @@ size_t cryptogram_data_sum_length(const cryptogram_t *cryptogram);
 size_t cryptogram_total_length(const cryptogram_t *cryptogram);
 cryptogram_t * cryptogram_alloc(size_t key, size_t mac, size_t body);
 
-cryptogram_t * ecies_encrypt(const EC_KEY *user, const unsigned char *data, size_t length);
-unsigned char * ecies_decrypt(const EC_KEY *user, cryptogram_t *cryptogram, size_t *length);
+cryptogram_t * ecies_encrypt(const ies_ctx_t *ctx, const unsigned char *data, size_t length, char *error);
+unsigned char * ecies_decrypt(const ies_ctx_t *ctx, const cryptogram_t *cryptogram, size_t *length, char *error);
 
 #endif /* _IES_H_ */

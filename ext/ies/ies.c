@@ -19,36 +19,30 @@ static EC_KEY *require_ec_key(VALUE self)
     return ec;
 }
 
-static uint64_t ies_key_length(VALUE self)
+static ies_ctx_t *create_context(VALUE self)
 {
-    // TODO
-    return 25;
+    ies_ctx_t* ctx = malloc(sizeof(ies_ctx_t));
+    ctx->cipher = EVP_aes_128_cbc();
+    ctx->md = EVP_sha1();
+    ctx->KDF_digest_length = SHA512_DIGEST_LENGTH;
+    ctx->envelope_key_length = 25;
+    ctx->user_key = require_ec_key(self);
+
+    return ctx;
 }
 
-static uint64_t ies_mac_length(VALUE self)
+static VALUE ies_cryptogram_to_rb_string(const ies_ctx_t *ctx,const cryptogram_t *cryptogram)
 {
-    // TODO
-    return 20;
-}
-
-static VALUE ies_cryptogram_to_rb_string(VALUE self, const cryptogram_t *cryptogram)
-{
-    if (cryptogram_key_length(cryptogram) != ies_key_length(self)) {
-	rb_raise(eIESError, "ECIES bug: Key length mismatch");
-    }
-    if (cryptogram_mac_length(cryptogram) != ies_mac_length(self)) {
-	rb_raise(eIESError, "ECIES bug: MAC length mismatch");
-    }
     return rb_str_new((char *)cryptogram_key_data(cryptogram), cryptogram_data_sum_length(cryptogram));
 }
 
-static cryptogram_t *ies_rb_string_to_cryptogram(VALUE self, const VALUE string)
+static cryptogram_t *ies_rb_string_to_cryptogram(const ies_ctx_t *ctx, const VALUE string)
 {
     uint64_t data_len = RSTRING_LEN(string);
     const char * data = RSTRING_PTR(string);
 
-    uint64_t key_length = ies_key_length(self);
-    uint64_t mac_length = ies_mac_length(self);
+    uint64_t key_length = ctx->envelope_key_length;
+    uint64_t mac_length = EVP_MD_size(ctx->md);
     cryptogram_t *cryptogram = cryptogram_alloc(key_length, mac_length, data_len - key_length - mac_length);
 
     memcpy(cryptogram_key_data(cryptogram), data, data_len);
@@ -80,19 +74,26 @@ static VALUE ies_initialize(VALUE self, VALUE key, VALUE algo)
  */
 static VALUE ies_public_encrypt(VALUE self, VALUE clear_text)
 {
-    EC_KEY *ec;
+    ies_ctx_t *ctx;
+    char error[1024] = "Unknown error";
     VALUE cipher_text;
     cryptogram_t *cryptogram;
 
-    ec = require_ec_key(self);
-    if (!EC_KEY_get0_public_key(ec))
-	rb_raise(eIESError, "Given EC key is not public key");
-
     StringValue(clear_text);
 
-    cryptogram = ecies_encrypt(ec, (unsigned char*)RSTRING_PTR(clear_text), RSTRING_LEN(clear_text));
-    cipher_text = ies_cryptogram_to_rb_string(self, cryptogram);
+    ctx = create_context(self);
+    if (!EC_KEY_get0_public_key(ctx->user_key))
+	rb_raise(eIESError, "Given EC key is not public key");
+
+    cryptogram = ecies_encrypt(ctx, (unsigned char*)RSTRING_PTR(clear_text), RSTRING_LEN(clear_text), error);
+    if (cryptogram == NULL) {
+	free(ctx);
+	ctx = NULL;
+	rb_raise(eIESError, "Error in encryption: %s", error);
+    }
+    cipher_text = ies_cryptogram_to_rb_string(ctx, cryptogram);
     cryptogram_free(cryptogram);
+    free(ctx);
     return cipher_text;
 }
 
@@ -104,23 +105,31 @@ static VALUE ies_public_encrypt(VALUE self, VALUE clear_text)
  */
 static VALUE ies_private_decrypt(VALUE self, VALUE cipher_text)
 {
-    EC_KEY *ec;
+    ies_ctx_t *ctx;
+    char error[1024] = "Unknown error";
     VALUE clear_text;
     cryptogram_t *cryptogram;
     size_t length;
     unsigned char *data;
 
-    ec = require_ec_key(self);
-    if (!EC_KEY_get0_private_key(ec))
-	rb_raise(eIESError, "Given EC key is not private key");
-
     StringValue(cipher_text);
 
-    cryptogram = ies_rb_string_to_cryptogram(self, cipher_text);
-    data = ecies_decrypt(ec, cryptogram, &length);
+    ctx = create_context(self);
+    if (!EC_KEY_get0_private_key(ctx->user_key))
+	rb_raise(eIESError, "Given EC key is not private key");
+
+    cryptogram = ies_rb_string_to_cryptogram(ctx, cipher_text);
+    data = ecies_decrypt(ctx, cryptogram, &length, error);
     cryptogram_free(cryptogram);
+    free(ctx);
+
+    if (data == NULL) {
+	rb_raise(eIESError, "Error in decryption: %s", error);
+    }
+
     clear_text = rb_str_new((char *)data, length);
     free(data);
+
     return clear_text;
 }
 
