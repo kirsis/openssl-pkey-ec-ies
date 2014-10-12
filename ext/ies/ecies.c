@@ -109,7 +109,7 @@ static EC_KEY * ecies_key_create(const EC_KEY *user, char *error) {
 static unsigned char *prepare_envelope_key(const ies_ctx_t *ctx, cryptogram_t *cryptogram, char *error)
 {
 
-    const size_t key_buf_len = ctx->KDF_digest_length;
+    const size_t key_buf_len = EVP_CIPHER_key_length(ctx->cipher) + EVP_MD_size(ctx->md);
     const size_t ecdh_key_len = (EC_GROUP_get_degree(EC_KEY_get0_group(ctx->user_key)) + 7) / 8;
     unsigned char *envelope_key = NULL, *ktmp = NULL;
     EC_KEY *ephemeral = NULL;
@@ -157,15 +157,11 @@ static unsigned char *prepare_envelope_key(const ies_ctx_t *ctx, cryptogram_t *c
 	NULL);
     if (written_length == 0) {
 	SET_OSSL_ERROR("Error while recording the public portion of the envelope key");
-	free(envelope_key);
-	EC_KEY_free(ephemeral);
-	return NULL;
+	goto err;
     }
     if (written_length != ctx->envelope_key_length) {
 	SET_ERROR("Written envelope key length does not match with expected");
-	free(envelope_key);
-	EC_KEY_free(ephemeral);
-	return NULL;
+	goto err;
     }
 
     EC_KEY_free(ephemeral);
@@ -239,7 +235,8 @@ static int store_cipher_body(
 }
 
 static int store_mac_tag(const ies_ctx_t *ctx, const unsigned char *envelope_key, cryptogram_t *cryptogram, char *error) {
-    const size_t key_length = EVP_CIPHER_key_length(ctx->cipher);
+    const size_t key_offset = EVP_CIPHER_key_length(ctx->cipher);
+    const size_t key_length = EVP_MD_size(ctx->md);
     const size_t mac_length = cryptogram_mac_length(cryptogram);
     unsigned int out_len;
     HMAC_CTX hmac;
@@ -247,7 +244,7 @@ static int store_mac_tag(const ies_ctx_t *ctx, const unsigned char *envelope_key
     HMAC_CTX_init(&hmac);
 
     /* Generate hash tag using encrypted data */
-    if (HMAC_Init_ex(&hmac, envelope_key + key_length, key_length, ctx->md, NULL) != 1
+    if (HMAC_Init_ex(&hmac, envelope_key + key_offset, key_length, ctx->md, NULL) != 1
 	|| HMAC_Update(&hmac, cryptogram_body_data(cryptogram), cryptogram_body_length(cryptogram)) != 1
 	|| HMAC_Final(&hmac, cryptogram_mac_data(cryptogram), &out_len) != 1) {
 	SET_OSSL_ERROR("Unable to generate tag");
@@ -268,7 +265,6 @@ static int store_mac_tag(const ies_ctx_t *ctx, const unsigned char *envelope_key
 cryptogram_t * ecies_encrypt(const ies_ctx_t *ctx, const unsigned char *data, size_t length, char *error) {
 
     const size_t block_length = EVP_CIPHER_block_size(ctx->cipher);
-    const size_t key_length = EVP_CIPHER_key_length(ctx->cipher);
     const size_t mac_length = EVP_MD_size(ctx->md);
     cryptogram_t *cryptogram;
     unsigned char *envelope_key;
@@ -280,12 +276,6 @@ cryptogram_t * ecies_encrypt(const ies_ctx_t *ctx, const unsigned char *data, si
 
     if (block_length == 0 || block_length > EVP_MAX_BLOCK_LENGTH) {
 	SET_ERROR("Derived block size is incorrect");
-	return NULL;
-    }
-
-    /* Make sure we are generating enough key material for the symmetric ciphers. */
-    if (key_length * 2 > ctx->KDF_digest_length) {
-	SET_ERROR("The key derivation method will not produce enough envelope key material for the chosen ciphers");
 	return NULL;
     }
 
@@ -373,12 +363,12 @@ static EC_KEY *ecies_key_create_public_octets(EC_KEY *user, unsigned char *octet
 unsigned char *restore_envelope_key(const ies_ctx_t *ctx, const cryptogram_t *cryptogram, char *error)
 {
 
-    const size_t key_buf_len = ctx->KDF_digest_length;
+    const size_t key_buf_len = EVP_CIPHER_key_length(ctx->cipher) + EVP_MD_size(ctx->md);
     const size_t ecdh_key_len = (EC_GROUP_get_degree(EC_KEY_get0_group(ctx->user_key)) + 7) / 8;
     EC_KEY *ephemeral = NULL, *user_copy = NULL;
     unsigned char *envelope_key = NULL, *ktmp = NULL;
 
-    if ((envelope_key = malloc(ctx->KDF_digest_length)) == NULL) {
+    if ((envelope_key = malloc(key_buf_len)) == NULL) {
 	SET_ERROR("Failed to allocate memory for envelope_key");
 	goto err;
     }
@@ -440,7 +430,8 @@ unsigned char *restore_envelope_key(const ies_ctx_t *ctx, const cryptogram_t *cr
 
 static int verify_mac(const ies_ctx_t *ctx, const cryptogram_t *cryptogram, const unsigned char * envelope_key, char *error)
 {
-    const size_t key_length = EVP_CIPHER_key_length(ctx->cipher);
+    const size_t key_offset = EVP_CIPHER_key_length(ctx->cipher);
+    const size_t key_length = EVP_MD_size(ctx->md);
     const size_t mac_length = cryptogram_mac_length(cryptogram);
     unsigned int out_len;
     HMAC_CTX hmac;
@@ -449,7 +440,7 @@ static int verify_mac(const ies_ctx_t *ctx, const cryptogram_t *cryptogram, cons
     HMAC_CTX_init(&hmac);
 
     /* Generate hash tag using encrypted data */
-    if (HMAC_Init_ex(&hmac, envelope_key + key_length, key_length, ctx->md, NULL) != 1
+    if (HMAC_Init_ex(&hmac, envelope_key + key_offset, key_length, ctx->md, NULL) != 1
 	|| HMAC_Update(&hmac, cryptogram_body_data(cryptogram), cryptogram_body_length(cryptogram)) != 1
 	|| HMAC_Final(&hmac, md, &out_len) != 1) {
 	SET_OSSL_ERROR("Unable to generate tag");
@@ -524,12 +515,6 @@ unsigned char * ecies_decrypt(const ies_ctx_t *ctx, const cryptogram_t *cryptogr
 
     if (!ctx || !cryptogram || !length || !error) {
 	SET_ERROR("Invalid argument");
-	return NULL;
-    }
-
-    /* Make sure we are generating enough key material for the symmetric ciphers. */
-    if ((unsigned)EVP_CIPHER_key_length(ctx->cipher) * 2 > ctx->KDF_digest_length) {
-	SET_ERROR("The key derivation method will not produce enough envelope key material for the chosen ciphers");
 	return NULL;
     }
 
