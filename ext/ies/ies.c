@@ -25,7 +25,6 @@ static ies_ctx_t *create_context(VALUE self)
     ctx->cipher = EVP_aes_128_cbc();
     ctx->md = EVP_sha1();
     ctx->kdf_md = EVP_sha1();
-    ctx->KDF_digest_length = SHA512_DIGEST_LENGTH;
     ctx->envelope_key_length = 25;
     ctx->user_key = require_ec_key(self);
 
