@@ -5,15 +5,9 @@
 #ifndef _IES_H_
 #define _IES_H_
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <inttypes.h>
-
 #include <openssl/ssl.h>
 #include <openssl/crypto.h>
 #include <openssl/err.h>
-#include <openssl/stack.h>
 
 #include <ruby.h>
 
