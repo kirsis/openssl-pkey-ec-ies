@@ -25,7 +25,7 @@ static ies_ctx_t *create_context(VALUE self)
     ctx->cipher = EVP_aes_128_cbc();
     ctx->md = EVP_sha1();
     ctx->kdf_md = EVP_sha1();
-    ctx->envelope_key_length = 25;
+    ctx->stored_key_length = 25;
     ctx->user_key = require_ec_key(self);
 
     return ctx;
@@ -41,7 +41,7 @@ static cryptogram_t *ies_rb_string_to_cryptogram(const ies_ctx_t *ctx, const VAL
     uint64_t data_len = RSTRING_LEN(string);
     const char * data = RSTRING_PTR(string);
 
-    uint64_t key_length = ctx->envelope_key_length;
+    uint64_t key_length = ctx->stored_key_length;
     uint64_t mac_length = EVP_MD_size(ctx->md);
     cryptogram_t *cryptogram = cryptogram_alloc(key_length, mac_length, data_len - key_length - mac_length);
 

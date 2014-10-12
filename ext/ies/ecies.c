@@ -75,6 +75,11 @@ int ECDH_KDF_X9_62(unsigned char *out, size_t outlen,
     return rv;
 }
 
+static size_t envelope_key_len(const ies_ctx_t *ctx)
+{
+    return EVP_CIPHER_key_length(ctx->cipher) + EVP_MD_size(ctx->md);
+}
+
 static EC_KEY * ecies_key_create(const EC_KEY *user, char *error) {
 
     const EC_GROUP *group;
@@ -109,7 +114,7 @@ static EC_KEY * ecies_key_create(const EC_KEY *user, char *error) {
 static unsigned char *prepare_envelope_key(const ies_ctx_t *ctx, cryptogram_t *cryptogram, char *error)
 {
 
-    const size_t key_buf_len = EVP_CIPHER_key_length(ctx->cipher) + EVP_MD_size(ctx->md);
+    const size_t key_buf_len = envelope_key_len(ctx);
     const size_t ecdh_key_len = (EC_GROUP_get_degree(EC_KEY_get0_group(ctx->user_key)) + 7) / 8;
     unsigned char *envelope_key = NULL, *ktmp = NULL;
     EC_KEY *ephemeral = NULL;
@@ -118,7 +123,7 @@ static unsigned char *prepare_envelope_key(const ies_ctx_t *ctx, cryptogram_t *c
     /* High-level ECDH via EVP does not allow use of arbitrary KDF function.
      * We should use low-level API for KDF2
      * c.f. openssl/crypto/ec/ec_pmeth.c */
-    if ((envelope_key = malloc(key_buf_len)) == NULL) {
+    if ((envelope_key = OPENSSL_malloc(key_buf_len)) == NULL) {
 	SET_ERROR("Failed to allocate memory for envelope_key");
 	goto err;
     }
@@ -153,13 +158,13 @@ static unsigned char *prepare_envelope_key(const ies_ctx_t *ctx, cryptogram_t *c
 	EC_KEY_get0_public_key(ephemeral),
 	POINT_CONVERSION_COMPRESSED,
 	(void *)cryptogram_key_data(cryptogram),
-	ctx->envelope_key_length,
+	ctx->stored_key_length,
 	NULL);
     if (written_length == 0) {
 	SET_OSSL_ERROR("Error while recording the public portion of the envelope key");
 	goto err;
     }
-    if (written_length != ctx->envelope_key_length) {
+    if (written_length != ctx->stored_key_length) {
 	SET_ERROR("Written envelope key length does not match with expected");
 	goto err;
     }
@@ -173,8 +178,10 @@ static unsigned char *prepare_envelope_key(const ies_ctx_t *ctx, cryptogram_t *c
   err:
     if (ephemeral)
 	EC_KEY_free(ephemeral);
-    if (envelope_key)
-	free(envelope_key);
+    if (envelope_key) {
+	OPENSSL_cleanse(envelope_key, key_buf_len);
+	OPENSSL_free(envelope_key);
+    }
     if (ktmp) {
 	OPENSSL_cleanse(ktmp, ecdh_key_len);
 	OPENSSL_free(ktmp);
@@ -266,8 +273,8 @@ cryptogram_t * ecies_encrypt(const ies_ctx_t *ctx, const unsigned char *data, si
 
     const size_t block_length = EVP_CIPHER_block_size(ctx->cipher);
     const size_t mac_length = EVP_MD_size(ctx->md);
-    cryptogram_t *cryptogram;
-    unsigned char *envelope_key;
+    cryptogram_t *cryptogram = NULL;
+    unsigned char *envelope_key = NULL;
 
     if (!ctx || !data || !length) {
 	SET_ERROR("Invalid arguments");
@@ -279,32 +286,39 @@ cryptogram_t * ecies_encrypt(const ies_ctx_t *ctx, const unsigned char *data, si
 	return NULL;
     }
 
-    cryptogram = cryptogram_alloc(ctx->envelope_key_length,
+    cryptogram = cryptogram_alloc(ctx->stored_key_length,
 				  mac_length,
 				  length + (length % block_length ? (block_length - (length % block_length)) : 0));
     if (!cryptogram) {
 	SET_ERROR("Unable to allocate a cryptogram_t buffer to hold the encrypted result.");
-	return NULL;
+	goto err;
     }
 
     if ((envelope_key = prepare_envelope_key(ctx, cryptogram, error)) == NULL) {
-	cryptogram_free(cryptogram);
-	return NULL;
+	goto err;
     }
 
     if (!store_cipher_body(ctx, envelope_key, data, length, cryptogram, error)) {
-	cryptogram_free(cryptogram);
-	free(envelope_key);
-	return NULL;
+	goto err;
     }
 
     if (!store_mac_tag(ctx, envelope_key, cryptogram, error)) {
-	cryptogram_free(cryptogram);
-	free(envelope_key);
-	return NULL;
+	goto err;
     }
 
+    OPENSSL_cleanse(envelope_key, envelope_key_len(ctx));
+    OPENSSL_free(envelope_key);
+
     return cryptogram;
+
+  err:
+    if (cryptogram)
+	cryptogram_free(cryptogram);
+    if (envelope_key) {
+	OPENSSL_cleanse(envelope_key, envelope_key_len(ctx));
+	OPENSSL_free(envelope_key);
+    }
+    return NULL;
 }
 
 static EC_KEY *ecies_key_create_public_octets(EC_KEY *user, unsigned char *octets, size_t length, char *error) {
@@ -363,12 +377,12 @@ static EC_KEY *ecies_key_create_public_octets(EC_KEY *user, unsigned char *octet
 unsigned char *restore_envelope_key(const ies_ctx_t *ctx, const cryptogram_t *cryptogram, char *error)
 {
 
-    const size_t key_buf_len = EVP_CIPHER_key_length(ctx->cipher) + EVP_MD_size(ctx->md);
+    const size_t key_buf_len = envelope_key_len(ctx);
     const size_t ecdh_key_len = (EC_GROUP_get_degree(EC_KEY_get0_group(ctx->user_key)) + 7) / 8;
     EC_KEY *ephemeral = NULL, *user_copy = NULL;
     unsigned char *envelope_key = NULL, *ktmp = NULL;
 
-    if ((envelope_key = malloc(key_buf_len)) == NULL) {
+    if ((envelope_key = OPENSSL_malloc(key_buf_len)) == NULL) {
 	SET_ERROR("Failed to allocate memory for envelope_key");
 	goto err;
     }
@@ -419,8 +433,10 @@ unsigned char *restore_envelope_key(const ies_ctx_t *ctx, const cryptogram_t *cr
 	EC_KEY_free(ephemeral);
     if (user_copy)
 	EC_KEY_free(user_copy);
-    if (envelope_key)
-	free(envelope_key);
+    if (envelope_key) {
+	OPENSSL_cleanse(envelope_key, key_buf_len);
+	OPENSSL_free(envelope_key);
+    }
     if (ktmp) {
 	OPENSSL_cleanse(ktmp, ecdh_key_len);
 	OPENSSL_free(ktmp);
@@ -511,29 +527,29 @@ unsigned char *decrypt_body(const ies_ctx_t *ctx, const cryptogram_t *cryptogram
 unsigned char * ecies_decrypt(const ies_ctx_t *ctx, const cryptogram_t *cryptogram, size_t *length, char *error)
 {
 
-    unsigned char *envelope_key, *output;
+    unsigned char *envelope_key = NULL, *output = NULL;
 
     if (!ctx || !cryptogram || !length || !error) {
 	SET_ERROR("Invalid argument");
-	return NULL;
+	goto err;
     }
 
     envelope_key = restore_envelope_key(ctx, cryptogram, error);
     if (envelope_key == NULL) {
-	return NULL;
+	goto err;
     }
 
     if (!verify_mac(ctx, cryptogram, envelope_key, error)) {
-	free(envelope_key);
-	return NULL;
+	goto err;
     }
 
     if ((output = decrypt_body(ctx, cryptogram, envelope_key, length, error)) == NULL) {
-	free(envelope_key);
-	return NULL;
+	goto err;
     }
 
-    free(envelope_key);
+  err:
+    OPENSSL_cleanse(envelope_key, envelope_key_len(ctx));
+    OPENSSL_free(envelope_key);
 
     return output;
 }
