@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-require 'minitest/unit'
+require 'minitest/autorun'
 require 'openssl/pkey/ec/ies'
 
-Minitest::Unit.autorun
+Minitest.autorun
 
-class TestIES < Minitest::Unit::TestCase
+class TestIES < Minitest::Test
   def setup
     test_key = File.read(File.expand_path(File.join(__FILE__, '..', 'test_key.pem')))
     @ec = OpenSSL::PKey::EC::IES.new(test_key, "placeholder")
