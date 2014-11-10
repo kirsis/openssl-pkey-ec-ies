@@ -1,4 +1,4 @@
-# OpenSSL::PKey::EC::IES
+# OpenSSL::PKey::EC::IES [![Build Status](https://travis-ci.org/webpay/openssl-pkey-ec-ies.svg?branch=master)](https://travis-ci.org/webpay/openssl-pkey-ec-ies)
 
 IES implementation following ECIES-KEM specification in [ISO 18033-2](http://www.shoup.net/iso/).
 
