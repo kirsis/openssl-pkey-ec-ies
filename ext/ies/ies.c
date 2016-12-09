@@ -6,7 +6,7 @@ static EC_KEY *require_ec_key(VALUE self)
 {
     const EVP_PKEY *pkey;
     const EC_KEY *ec;
-    Data_Get_Struct(self, EVP_PKEY, pkey);
+    TypedData_Get_Struct(self, EVP_PKEY, RTYPEDDATA_TYPE(self), pkey);
     if (!pkey) {
 	rb_raise(rb_eRuntimeError, "PKEY wasn't initialized!");
     }
