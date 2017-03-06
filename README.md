@@ -27,6 +27,8 @@ openssl ecparam -genkey -out ec_key.pem -name prime192v1
 ```
 
 ```ruby
+require 'openssl/pkey/ec/ies'
+
 ec = OpenSSL::PKey::EC::IES.new(test_key, "placeholder")
 source = 'my secret'
 cryptogram = ec.public_encrypt(source)  # => cryptogram in string
