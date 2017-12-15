@@ -74,6 +74,8 @@ static VALUE ies_initialize(VALUE self, VALUE key, VALUE algo)
  */
 static VALUE ies_public_encrypt(VALUE self, VALUE clear_text)
 {
+    rb_raise(eIESError, "YOLO");
+    
     ies_ctx_t *ctx;
     char error[1024] = "Unknown error";
     VALUE cipher_text;
