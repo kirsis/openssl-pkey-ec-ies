@@ -82,7 +82,7 @@ static VALUE ies_public_encrypt(VALUE self, VALUE clear_text)
     StringValue(clear_text);
 
     ctx = create_context(self);
-    rb_raise(eIESError, "YOLO2");
+    
     if (!EC_KEY_get0_public_key(ctx->user_key))
     rb_raise(eIESError, "YOLO3");
 	rb_raise(eIESError, "Given EC key is not public key");
