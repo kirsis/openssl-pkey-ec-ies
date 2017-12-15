@@ -74,8 +74,6 @@ static VALUE ies_initialize(VALUE self, VALUE key, VALUE algo)
  */
 static VALUE ies_public_encrypt(VALUE self, VALUE clear_text)
 {
-    rb_raise(eIESError, "YOLO");
-    
     ies_ctx_t *ctx;
     char error[1024] = "Unknown error";
     VALUE cipher_text;
@@ -84,15 +82,19 @@ static VALUE ies_public_encrypt(VALUE self, VALUE clear_text)
     StringValue(clear_text);
 
     ctx = create_context(self);
+    rb_raise(eIESError, "YOLO2");
     if (!EC_KEY_get0_public_key(ctx->user_key))
+    rb_raise(eIESError, "YOLO3");
 	rb_raise(eIESError, "Given EC key is not public key");
 
     cryptogram = ecies_encrypt(ctx, (unsigned char*)RSTRING_PTR(clear_text), RSTRING_LEN(clear_text), error);
+    rb_raise(eIESError, "YOLO4");
     if (cryptogram == NULL) {
 	free(ctx);
 	ctx = NULL;
 	rb_raise(eIESError, "Error in encryption: %s", error);
     }
+    rb_raise(eIESError, "YOLO5");
     cipher_text = ies_cryptogram_to_rb_string(ctx, cryptogram);
     cryptogram_free(cryptogram);
     free(ctx);
