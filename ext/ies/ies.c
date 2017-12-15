@@ -6,7 +6,9 @@ static EC_KEY *require_ec_key(VALUE self)
 {
     const EVP_PKEY *pkey;
     const EC_KEY *ec;
+    rb_raise(rb_eRuntimeError, "YOLO MOFO");
     TypedData_Get_Struct(self, EVP_PKEY, RTYPEDDATA_TYPE(self), pkey);
+    rb_raise(rb_eRuntimeError, "MOFO YOLO");
     if (!pkey) {
 	rb_raise(rb_eRuntimeError, "PKEY wasn't initialized!");
     }
@@ -82,19 +84,15 @@ static VALUE ies_public_encrypt(VALUE self, VALUE clear_text)
     StringValue(clear_text);
 
     ctx = create_context(self);
-    
     if (!EC_KEY_get0_public_key(ctx->user_key))
-    rb_raise(eIESError, "YOLO3");
 	rb_raise(eIESError, "Given EC key is not public key");
 
     cryptogram = ecies_encrypt(ctx, (unsigned char*)RSTRING_PTR(clear_text), RSTRING_LEN(clear_text), error);
-    rb_raise(eIESError, "YOLO4");
     if (cryptogram == NULL) {
 	free(ctx);
 	ctx = NULL;
 	rb_raise(eIESError, "Error in encryption: %s", error);
     }
-    rb_raise(eIESError, "YOLO5");
     cipher_text = ies_cryptogram_to_rb_string(ctx, cryptogram);
     cryptogram_free(cryptogram);
     free(ctx);
