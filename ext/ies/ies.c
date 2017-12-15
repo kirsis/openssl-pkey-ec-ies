@@ -96,8 +96,7 @@ static VALUE ies_public_encrypt(VALUE self, VALUE clear_text)
     }
     
     cipher_text = ies_cryptogram_to_rb_string(ctx, cryptogram);
-    rb_raise(rb_eRuntimeError, "GOT CIPHERTEXT YO");
-
+    
     cryptogram_free(cryptogram);
     free(ctx);
     
