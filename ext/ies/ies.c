@@ -87,13 +87,14 @@ static VALUE ies_public_encrypt(VALUE self, VALUE clear_text)
     ctx = create_context(self);
     if (!EC_KEY_get0_public_key(ctx->user_key))
 	rb_raise(eIESError, "Given EC key is not public key");
-rb_raise(rb_eRuntimeError, "GOT HERE");
+
     cryptogram = ecies_encrypt(ctx, (unsigned char*)RSTRING_PTR(clear_text), RSTRING_LEN(clear_text), error);
     if (cryptogram == NULL) {
 	free(ctx);
 	ctx = NULL;
 	rb_raise(eIESError, "Error in encryption: %s", error);
     }
+    rb_raise(rb_eRuntimeError, "GOT HERE TOO");
     cipher_text = ies_cryptogram_to_rb_string(ctx, cryptogram);
     cryptogram_free(cryptogram);
     free(ctx);
