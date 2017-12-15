@@ -6,7 +6,7 @@ static EC_KEY *require_ec_key(VALUE self)
 {
     const EVP_PKEY *pkey;
     const EC_KEY *ec;
-    rb_raise(rb_eRuntimeError, "YOLO MOFO");
+    
     TypedData_Get_Struct(self, EVP_PKEY, RTYPEDDATA_TYPE(self), pkey);
     rb_raise(rb_eRuntimeError, "MOFO YOLO");
     if (!pkey) {
