@@ -94,8 +94,10 @@ static VALUE ies_public_encrypt(VALUE self, VALUE clear_text)
 	ctx = NULL;
 	rb_raise(eIESError, "Error in encryption: %s", error);
     }
-    rb_raise(rb_eRuntimeError, "GOT HERE TOO");
+    
     cipher_text = ies_cryptogram_to_rb_string(ctx, cryptogram);
+    rb_raise(rb_eRuntimeError, "GOT CIPHERTEXT YO");
+
     cryptogram_free(cryptogram);
     free(ctx);
     
