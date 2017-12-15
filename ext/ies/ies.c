@@ -8,7 +8,7 @@ static EC_KEY *require_ec_key(VALUE self)
     const EC_KEY *ec;
     
     TypedData_Get_Struct(self, EVP_PKEY, RTYPEDDATA_TYPE(self), pkey);
-    rb_raise(rb_eRuntimeError, "MOFO YOLO");
+    
     if (!pkey) {
 	rb_raise(rb_eRuntimeError, "PKEY wasn't initialized!");
     }
@@ -18,6 +18,7 @@ static EC_KEY *require_ec_key(VALUE self)
     ec = pkey->pkey.ec;
     if (ec == NULL)
 	rb_raise(eIESError, "EC_KEY is not initialized");
+    rb_raise(rb_eRuntimeError, "MOFO YOLO XOXO");
     return ec;
 }
 
